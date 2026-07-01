@@ -220,11 +220,12 @@ Each element must follow the output schema exactly."""
     print(f"Running prospecting batch for {len(accounts_batch)} accounts...")
     print(f"Accounts: {[a['company'] for a in accounts_batch]}")
 
-    response = client.messages.create(
+        response = client.beta.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=8000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
+        betas=["mcp-client-2025-11-20"],
         mcp_servers=[
             {
                 "type": "url",
@@ -234,8 +235,12 @@ Each element must follow the output schema exactly."""
         ],
         tools=[
             {
-                "type": "web_search_20250305",
+                "type": "web_search_20260209",
                 "name": "web_search"
+            },
+            {
+                "type": "mcp_toolset",
+                "mcp_server_name": "zoominfo-mcp"
             }
         ]
     )
