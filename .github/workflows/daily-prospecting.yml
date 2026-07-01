@@ -1,0 +1,28 @@
+name: Daily Prospecting Agent
+
+on:
+  schedule:
+    # 6:00am CDT (UTC-5) on weekdays. GitHub Actions cron is always UTC and
+    # does not observe DST, so this fires at 5:00am CST during winter months.
+    - cron: "0 11 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  run-prospecting-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run IW Prospecting Agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python iw_prospecting_agent.py
