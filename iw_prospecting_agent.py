@@ -20,7 +20,11 @@ import anthropic
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
-BATCH_SIZE = 14  # accounts per daily run (VP guidance: 12-16)
+# VP guidance is 12-16/day, but the org's Anthropic usage tier caps input
+# tokens at 10,000/minute - each account's web-search research can burn
+# through that fast. Raise this once the usage tier increases (tiers
+# typically grow automatically with account age/spend on console.anthropic.com).
+BATCH_SIZE = 3
 GOOGLE_SHEET_NAME = "IW Prospecting Tracker - Daily Batches"
 
 # ZoomInfo MCP auth (Okta client_credentials) - bearer tokens expire in 24h,
