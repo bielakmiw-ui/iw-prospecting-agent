@@ -220,7 +220,7 @@ Each element must follow the output schema exactly."""
     print(f"Running prospecting batch for {len(accounts_batch)} accounts...")
     print(f"Accounts: {[a['company'] for a in accounts_batch]}")
 
-        response = client.beta.messages.create(
+    response = client.beta.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=8000,
         system=SYSTEM_PROMPT,
@@ -335,18 +335,25 @@ def append_to_google_sheet(batch_results: list, sheet_name: str):
 
     # Upload to Google Drive as a CSV (will convert to Google Sheet)
     client = anthropic.Anthropic()
-    response = client.messages.create(
+    response = client.beta.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=1000,
         messages=[{
             "role": "user",
             "content": f"Create a new Google Sheet file titled '{sheet_name} - {tab_name}' with this CSV content:\n\n{csv_content}"
         }],
+        betas=["mcp-client-2025-11-20"],
         mcp_servers=[
             {
                 "type": "url",
                 "url": "https://drivemcp.googleapis.com/mcp/v1",
                 "name": "google-drive-mcp"
+            }
+        ],
+        tools=[
+            {
+                "type": "mcp_toolset",
+                "mcp_server_name": "google-drive-mcp"
             }
         ]
     )
@@ -396,18 +403,25 @@ def send_email_summary(batch_results: list, tab_name: str):
     email_body = "\n".join(summary_lines)
 
     client = anthropic.Anthropic()
-    client.messages.create(
+    client.beta.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=500,
         messages=[{
             "role": "user",
             "content": f"Send an email to matt@weareiw.com with subject 'IW Prospecting - {today} Batch Ready' and this body:\n\n{email_body}"
         }],
+        betas=["mcp-client-2025-11-20"],
         mcp_servers=[
             {
                 "type": "url",
                 "url": "https://gmailmcp.googleapis.com/mcp/v1",
                 "name": "gmail-mcp"
+            }
+        ],
+        tools=[
+            {
+                "type": "mcp_toolset",
+                "mcp_server_name": "gmail-mcp"
             }
         ]
     )
