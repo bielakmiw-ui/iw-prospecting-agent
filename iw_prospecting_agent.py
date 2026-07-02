@@ -11,7 +11,10 @@ Schedule: Run daily at 6am CDT via Claude Code Remote trigger.
 
 import os
 import json
+import base64
 import datetime
+import urllib.request
+import urllib.parse
 import anthropic
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -19,6 +22,14 @@ import anthropic
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 BATCH_SIZE = 14  # accounts per daily run (VP guidance: 12-16)
 GOOGLE_SHEET_NAME = "IW Prospecting Tracker - Daily Batches"
+
+# ZoomInfo MCP auth (Okta client_credentials) - bearer tokens expire in 24h,
+# so a fresh one is requested at the start of each run instead of being stored.
+# Disabled until ZoomInfo confirms what auth their MCP endpoint (as opposed to
+# the regular Data API) actually requires - see get_zoominfo_token().
+ZOOMINFO_ENABLED = False
+ZOOMINFO_TOKEN_URL = "https://okta-login.zoominfo.com/oauth2/default/v1/token"
+ZOOMINFO_SCOPE = "api:data:company api:data:contact api:data:intent api:data:news api:data:scoops"
 
 # Accounts already processed (update this list as batches complete)
 PROCESSED_ACCOUNTS = [
@@ -179,6 +190,30 @@ def load_account_queue():
         return []
 
 
+def get_zoominfo_token() -> str:
+    """
+    Exchange the ZOOMINFO_CLIENT_ID / ZOOMINFO_CLIENT_SECRET for a fresh
+    bearer token via ZoomInfo's Okta client_credentials endpoint.
+    """
+    client_id = os.environ["ZOOMINFO_CLIENT_ID"]
+    client_secret = os.environ["ZOOMINFO_CLIENT_SECRET"]
+
+    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    data = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "scope": ZOOMINFO_SCOPE,
+    }).encode()
+
+    req = urllib.request.Request(ZOOMINFO_TOKEN_URL, data=data, method="POST")
+    req.add_header("Authorization", f"Basic {credentials}")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+    with urllib.request.urlopen(req) as resp:
+        payload = json.loads(resp.read())
+
+    return payload["access_token"]
+
+
 def run_prospecting_batch(accounts_batch, in_store_hardware: dict):
     """
     Use the Claude API with ZoomInfo MCP and web search to research
@@ -201,12 +236,20 @@ def run_prospecting_batch(accounts_batch, in_store_hardware: dict):
             f"In-store hardware: {hw}"
         )
 
+    zoominfo_step = (
+        "1. Use ZoomInfo to find 2-3 contacts (hardware refresh, NSO/kitting, break/fix roles)\n"
+        "2. Enrich confirmed contacts for email and phone"
+        if ZOOMINFO_ENABLED else
+        "1. Identify 2-3 likely contact roles (hardware refresh, NSO/kitting, break/fix) based on "
+        "typical org structure for this vertical. Leave name/email/phone as 'Confirm via ZoomInfo' "
+        "and set zi_status to 'Confirm via ZoomInfo' - live ZoomInfo lookup is temporarily disabled."
+    )
+
     user_prompt = f"""Today is {datetime.date.today().strftime('%B %d, %Y')}.
 
 Research the following {len(accounts_batch)} accounts from IW Technologies' master book of business.
 For each account:
-1. Use ZoomInfo to find 2-3 contacts (hardware refresh, NSO/kitting, break/fix roles)
-2. Enrich confirmed contacts for email and phone
+{zoominfo_step}
 3. Search the web and RetailDive for triggering events in the last 90 days
 4. Apply IW's vertical fit rules - flag skips clearly with reasons
 5. Write a cold email draft, voicemail script, and 3 talking points for each non-skip account
@@ -220,30 +263,28 @@ Each element must follow the output schema exactly."""
     print(f"Running prospecting batch for {len(accounts_batch)} accounts...")
     print(f"Accounts: {[a['company'] for a in accounts_batch]}")
 
-    response = client.beta.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=8000,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-        betas=["mcp-client-2025-11-20"],
-        mcp_servers=[
-            {
-                "type": "url",
-                "url": "https://mcp.zoominfo.com/mcp",
-                "name": "zoominfo-mcp"
-            }
-        ],
-        tools=[
-            {
-                "type": "web_search_20260209",
-                "name": "web_search"
-            },
-            {
-                "type": "mcp_toolset",
-                "mcp_server_name": "zoominfo-mcp"
-            }
-        ]
-    )
+    tools = [{"type": "web_search_20260209", "name": "web_search"}]
+    request_kwargs = {
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": 8000,
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_prompt}],
+    }
+
+    if ZOOMINFO_ENABLED:
+        tools.append({"type": "mcp_toolset", "mcp_server_name": "zoominfo-mcp"})
+        request_kwargs["betas"] = ["mcp-client-2025-11-20"]
+        request_kwargs["mcp_servers"] = [{
+            "type": "url",
+            "url": "https://mcp.zoominfo.com/mcp",
+            "name": "zoominfo-mcp",
+            "authorization_token": get_zoominfo_token()
+        }]
+        request_kwargs["tools"] = tools
+        response = client.beta.messages.create(**request_kwargs)
+    else:
+        request_kwargs["tools"] = tools
+        response = client.messages.create(**request_kwargs)
 
     # Extract the JSON from the response
     result_text = ""
