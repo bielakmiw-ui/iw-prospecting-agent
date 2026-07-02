@@ -271,9 +271,12 @@ Each element must follow the output schema exactly."""
     # own search depth (not account count) drives token use and can still
     # blow the org's per-minute rate limit even with a small batch.
     tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": len(accounts_batch) * 2}]
+    # 16000 gives real headroom beyond the search/reasoning that precedes the
+    # final JSON; streaming is required at this size to avoid the SDK's
+    # non-streaming timeout guard on a call that already runs several minutes.
     request_kwargs = {
         "model": ANTHROPIC_MODEL,
-        "max_tokens": 8000,
+        "max_tokens": 16000,
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_prompt}],
     }
@@ -288,10 +291,14 @@ Each element must follow the output schema exactly."""
             "authorization_token": get_zoominfo_token()
         }]
         request_kwargs["tools"] = tools
-        response = client.beta.messages.create(**request_kwargs)
+        with client.beta.messages.stream(**request_kwargs) as stream:
+            response = stream.get_final_message()
     else:
         request_kwargs["tools"] = tools
-        response = client.messages.create(**request_kwargs)
+        with client.messages.stream(**request_kwargs) as stream:
+            response = stream.get_final_message()
+
+    print(f"stop_reason: {response.stop_reason}")
 
     # Extract the JSON from the response
     result_text = ""
@@ -306,6 +313,14 @@ Each element must follow the output schema exactly."""
         if result_text.startswith("json"):
             result_text = result_text[4:]
     result_text = result_text.strip().rstrip("```").strip()
+
+    if not result_text:
+        raise RuntimeError(
+            f"Empty response text (stop_reason={response.stop_reason}). "
+            "The model likely hit max_tokens or the tool-use iteration limit "
+            "before producing output - try raising max_tokens, lowering "
+            "max_uses, or reducing BATCH_SIZE."
+        )
 
     return json.loads(result_text)
 
