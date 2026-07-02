@@ -267,7 +267,10 @@ Each element must follow the output schema exactly."""
     print(f"Running prospecting batch for {len(accounts_batch)} accounts...")
     print(f"Accounts: {[a['company'] for a in accounts_batch]}")
 
-    tools = [{"type": "web_search_20260209", "name": "web_search"}]
+    # max_uses caps total searches for the whole batch - without it Claude's
+    # own search depth (not account count) drives token use and can still
+    # blow the org's per-minute rate limit even with a small batch.
+    tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": len(accounts_batch) * 2}]
     request_kwargs = {
         "model": ANTHROPIC_MODEL,
         "max_tokens": 8000,
