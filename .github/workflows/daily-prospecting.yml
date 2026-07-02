@@ -25,4 +25,6 @@ jobs:
       - name: Run IW Prospecting Agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ZOOMINFO_CLIENT_ID: ${{ secrets.ZOOMINFO_CLIENT_ID }}
+          ZOOMINFO_CLIENT_SECRET: ${{ secrets.ZOOMINFO_CLIENT_SECRET }}
         run: python iw_prospecting_agent.py
