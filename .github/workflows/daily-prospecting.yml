@@ -1,10 +1,12 @@
 name: Daily Prospecting Agent
 
 on:
-  schedule:
-    # 6:00am CDT (UTC-5) on weekdays. GitHub Actions cron is always UTC and
-    # does not observe DST, so this fires at 5:00am CST during winter months.
-    - cron: "0 11 * * 1-5"
+  # Automatic weekday schedule is paused while ZoomInfo auth is unresolved -
+  # it was burning tokens/cost on runs that couldn't complete. Manual runs
+  # via workflow_dispatch (the "Run workflow" button) still work.
+  # To resume automatic runs, uncomment the schedule block below:
+  # schedule:
+  #   - cron: "0 11 * * 1-5"  # 6:00am CDT (UTC-5) on weekdays
   workflow_dispatch: {}
 
 jobs:
